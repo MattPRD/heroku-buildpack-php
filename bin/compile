@@ -4,10 +4,18 @@
 # fail fast
 set -e
 
+# Heroku Revision.
+#
+# Affixed to all vendored binary output to represent changes to the
+# compilation environment without a change to the upstream version,
+# e.g. PHP 5.3.27 without, and then subsequently with, libmcrypt.
+heroku_rev='-1'
+
 # config
-APACHE_VERSION="2.4.3"
+MCRYPT_VERSION="2.5.8"
+APACHE_VERSION="2.2.25"
 APACHE_PATH="apache"
-PHP_VERSION="5.4.11"
+PHP_VERSION="5.4.12"
 PHP_PATH="php"
 
 BIN_DIR=$(dirname $0)
@@ -30,7 +38,11 @@ if [ -f www/Procfile ]; then
   mv www/Procfile .
 fi
 
-APACHE_URL="https://s3-ap-southeast-2.amazonaws.com/ngson2000/apache-$APACHE_VERSION.tar.gz"
+MCRYPT_URL="https://heroku-buildpack-php.s3.amazonaws.com/mcrypt-""$MCRYPT_VERSION""$heroku_rev"".tar.gz"
+echo "-----> Bundling mcrypt version $MCRYPT_VERSION"
+curl --silent --max-time 60 --location "$MCRYPT_URL" | tar xz
+
+APACHE_URL="https://heroku-buildpack-php.s3.amazonaws.com/apache-""$APACHE_VERSION""$heroku_rev"".tar.gz"
 echo "-----> Bundling Apache version $APACHE_VERSION"
 curl --silent --max-time 60 --location "$APACHE_URL" | tar xz
 
@@ -40,15 +52,11 @@ curl --silent --max-time 60 --location "$PHP_URL" | tar xz
 
 # update config files
 cp $LP_DIR/conf/httpd.conf $APACHE_PATH/conf
-cp $LP_DIR/conf/php.ini $PHP_PATH
-cp $LP_DIR/conf/config.php www/htdocs
+cp $LP_DIR/conf/php.ini php
 
 # make php available on bin
 mkdir -p bin
 ln -s /app/php/bin/php bin/php
-
-# create mahara data folder
-mkdir -p /app/maharadata
 
 cat >>boot.sh <<EOF
 for var in \`env|cut -f1 -d=\`; do
@@ -58,7 +66,7 @@ touch /app/apache/logs/error_log
 touch /app/apache/logs/access_log
 tail -F /app/apache/logs/error_log &
 tail -F /app/apache/logs/access_log &
-export LD_LIBRARY_PATH=/app/php/ext
+export LD_LIBRARY_PATH=/app/php/lib/php
 export PHP_INI_SCAN_DIR=/app/www
 echo "Launching apache"
 exec /app/apache/bin/httpd -DNO_DETACH
